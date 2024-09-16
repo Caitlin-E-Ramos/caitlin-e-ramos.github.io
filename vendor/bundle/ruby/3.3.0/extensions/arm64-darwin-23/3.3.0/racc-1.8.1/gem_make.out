@@ -1,0 +1,18 @@
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/racc-1.8.1/ext/racc/cparse
+/Users/caitlinramos/.rbenv/versions/3.3.5/bin/ruby extconf.rb
+creating Makefile
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-fix60f sitelibdir\=./.gem.20240916-65145-fix60f clean
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-fix60f sitelibdir\=./.gem.20240916-65145-fix60f
+compiling cparse.c
+linking shared-object racc/cparse.bundle
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-fix60f sitelibdir\=./.gem.20240916-65145-fix60f install
+/usr/bin/install -c -m 0755 cparse.bundle ./.gem.20240916-65145-fix60f/racc
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/racc-1.8.1/ext/racc/cparse
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-fix60f sitelibdir\=./.gem.20240916-65145-fix60f clean

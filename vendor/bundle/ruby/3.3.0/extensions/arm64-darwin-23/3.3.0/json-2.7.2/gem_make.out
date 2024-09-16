@@ -1,0 +1,16 @@
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/json-2.7.2/ext/json
+/Users/caitlinramos/.rbenv/versions/3.3.5/bin/ruby extconf.rb
+creating Makefile
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/json-2.7.2/ext/json
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-yw9onv sitelibdir\=./.gem.20240916-65145-yw9onv clean
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/json-2.7.2/ext/json
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-yw9onv sitelibdir\=./.gem.20240916-65145-yw9onv
+make: Nothing to be done for `all'.
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/json-2.7.2/ext/json
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-yw9onv sitelibdir\=./.gem.20240916-65145-yw9onv install
+
+current directory: /Users/caitlinramos/Documents/caitlin-e-ramos.github.io/vendor/bundle/ruby/3.3.0/gems/json-2.7.2/ext/json
+make DESTDIR\= sitearchdir\=./.gem.20240916-65145-yw9onv sitelibdir\=./.gem.20240916-65145-yw9onv clean
