@@ -1,0 +1,342 @@
+clear all, close all, clc;
+
+%% User inputted parameters
+
+B = 0.5; % Fraction of non-cut segment
+r = 60; % Desired curve equation
+L = 2*pi*r/4; % Total length of curved tubes
+n = 10; % N segments; n+1 points
+OD_outer = 5.5; % Outer diameter of outer tube
+OD_inner = 4; % Outer diameter of inner tube
+t_inner = 1.4; % Wall thickness of inner tube
+t_outer = 0.4; % Wall thickness of outer tube
+
+% Properties of tube materials
+E_inner = 1.9 * 10^9; % Young's modulus of inner tube
+E_outer = 1.9 * 10^9; % Young's modulus of outer tube
+flex_strength_inner = 65 * 10^6; % Flexural strength of inner tube
+flex_strength_outer = 65 * 10^6; % Flexural strength of outer tube
+strain_safety_factor = 1.5; % Safety factor for strain calculations
+
+%% Establishment of other necessary parameters
+
+ID_outer = OD_outer - 2*t_outer; % Inner diameter of outer tube
+ID_inner = OD_inner - 2*t_inner; % Inner diameter of inner tube
+c = L * B / n;
+l = L * (1 - B) / n;
+cj = c * ones(n, 1); 
+lj = l * ones(n, 1);
+hj = lj;
+
+%% Equations to solve for curvature of each notch to minimize error
+
+% Ry(pi/2) is the rotation matrix associated with a pi/2 rotation about y
+% axis, which is defined below:
+
+Ry = [0, 0, 1;
+      0, 1, 0;
+      -1, 0, 0];
+
+pd = zeros(n+1, 3);
+pdprime = zeros(n+1, 3);
+pj = zeros(n+1,3);
+kj = zeros(n,1);
+
+for j = 2:n+1
+    sj = (j - 1) * (L / n); 
+    pd(j, :) = [r - r * cos(sj / r), 0, r * sin(sj / r)]; 
+    pdprime(j, :) = [r * sin(sj / r), 0, r * cos(sj / r)]; % Ensure this is a row vector
+    Nj = Ry * pdprime(j, :)';
+    s = fminbnd(@(x) findCurvature(x, lj(j-1), cj(j-1), Nj, pj(j-1,:), pd(j,:)), 0, pi/(2*lj(j-1)));
+    p = findNextPosition(s, lj(j-1), cj(j-1), pj(j-1,:));
+    pj(j,:) = p';
+    kj(j-1) = s; 
+end
+
+figure('Color','w');
+
+plot(pd(:,1), pd(:,3),'x--'); hold on;
+plot(pj(:,1), pj(:,3), 'o-'); hold on;
+xlabel('x (mm)', 'Interpreter','latex', 'FontSize',14);
+ylabel('y (mm)', 'Interpreter','latex', 'FontSize',14);
+ax = gca; % Get current axis
+ax.XAxis.TickLabelInterpreter = 'latex';
+ax.YAxis.TickLabelInterpreter = 'latex';
+axis equal;
+legend("Desired", "Optimized","Location","southeast", 'Interpreter', 'latex','FontSize',13);
+
+%% Main body of code
+
+clc;
+strain_safe_max_inner = flex_strength_inner / (E_inner * strain_safety_factor);
+strain_safe_max_outer= flex_strength_outer / (E_outer * strain_safety_factor) ;
+
+[k_max, i_max] = max(kj);
+index_max_strain = i_max;
+
+g_inner = fminbnd(@(x) findCuttingDepth(x, strain_safe_max_inner, OD_inner, ID_inner, k_max), OD_inner/2, OD_inner-eps);
+y_inner = findNeutralAxis(g_inner, OD_inner, ID_inner)
+% switched strain a and b because b is in tension for inner while a is in
+% tension for outer
+[strain_b, strain_a] = findStrain(g_inner, OD_inner, k_max, y_inner)
+I_inner = findI(g_inner, OD_inner, ID_inner)
+
+g_outer = fminbnd(@(x) match_EI(x, OD_outer, ID_outer, E_inner*I_inner, E_outer), OD_outer/2, OD_outer-eps);
+y_outer = findNeutralAxis(g_outer, OD_outer, ID_outer)
+[strain_a, strain_b] = findStrain(g_outer, OD_outer, k_max, y_outer)
+I_outer = findI(g_outer, OD_outer, ID_outer)
+
+found_bench = false;
+
+gj_inner = zeros(size(kj));
+yj_inner = zeros(size(kj));
+Ij_inner = zeros(size(kj));
+gj_outer = zeros(size(kj));
+yj_outer = zeros(size(kj));
+Ij_outer = zeros(size(kj));
+aj_desired = zeros(size(kj));
+aj_actual = zeros(size(kj));
+strain_matrix_inner = zeros(length(kj), 2); 
+strain_matrix_outer = zeros(length(kj), 2); 
+tolerance = 1e-6;
+max_strain_inner = zeros(1,2);
+index_max_strain_inner = zeros(1,2);
+max_strain_outer = zeros(1,2);
+index_max_strain_outer = zeros(1,2);
+
+for i = 1:length(kj)
+    %initial guesses for g_inner
+    gj_inner(i) = g_inner * abs(kj(i)/k_max);
+    yj_inner(i) = findNeutralAxis(gj_inner(i), OD_inner, ID_inner);
+    Ij_inner(i) = findI(gj_inner(i), OD_inner, ID_inner);
+end
+    
+for i = 1:length(kj)
+    gj_outer(i) = fminbnd(@(x) match_EI(x, OD_outer, ID_outer, E_inner*Ij_inner(i), E_outer), OD_outer/2, OD_outer-eps);
+    yj_outer(i) = findNeutralAxis(gj_outer(i), OD_outer, ID_outer);
+    Ij_outer(i) = findI(gj_outer(i), OD_outer, ID_outer);
+end
+
+design_for_tube = "inner";
+
+while 1
+
+    for i = 1:length(kj)
+        [strain_c_inner, strain_t_inner] = findStrain(gj_inner(i), OD_inner, kj(i), yj_inner(i));
+        strain_matrix_inner(i, :) = [strain_t_inner, strain_c_inner];
+        [strain_t_outer, strain_c_outer] = findStrain(gj_outer(i), OD_outer, kj(i), yj_outer(i));
+        strain_matrix_outer(i, :) = [strain_t_outer, strain_c_outer];
+    end
+
+    for i = 1:size(strain_matrix_inner, 2)
+        % Find the maximum strain for the inner matrix column
+        [max_strain_inner(i), index_max_strain_inner(i)] = max(abs(strain_matrix_inner(:,i)));
+    
+        % Find the maximum strain for the outer matrix column
+        [max_strain_outer(i), index_max_strain_outer(i)] = max(abs(strain_matrix_outer(:,i)));
+    end
+    
+    % Find the overall maximum strains for the inner and outer matrices
+    [max_inner_strain, inner_index] = max(max_strain_inner);
+    [max_outer_strain, outer_index] = max(max_strain_outer);
+    
+    if (max_inner_strain <= strain_safe_max_inner) && (max_outer_strain > strain_safe_max_outer)
+        design_for_tube = "outer";
+    elseif (max_inner_strain <= strain_safe_max_inner) && (max_outer_strain <= strain_safe_max_outer)
+        break
+    end
+    
+    switch design_for_tube
+        case "inner"
+            index_max_strain = index_max_strain_inner(i);
+        
+            disp(" ");
+            disp("The benchmark pair did not have the highest strain.")
+            disp("Setting a new benchmark pair and recalculating notch depths.")
+            disp(" ");
+            g_inner = fminbnd(@(x) findCuttingDepth(x, strain_safe_max_inner, OD_inner, ID_inner, kj(index_max_strain)), OD_inner/2, OD_inner-eps);
+            y_inner = findNeutralAxis(g_inner, OD_inner, ID_inner);
+            % switched strain a and b because b is in tension for inner while a is in
+            % tension for outer
+            % [strain_b, strain_a] = findStrain(g_inner, OD_inner, k_max, y_inner)
+            I_inner = findI(g_inner, OD_inner, ID_inner);
+            g_outer = fminbnd(@(x) match_EI(x, OD_outer, ID_outer, E_inner*I_inner, E_outer), OD_outer/2, OD_outer-eps);
+            
+            y_outer = findNeutralAxis(g_outer, OD_outer, ID_outer);
+            % [strain_a, strain_b] = findStrain(g_outer, OD_outer, k_max, y_outer)
+            I_outer = findI(g_outer, OD_outer, ID_outer);
+        
+            dm = y_inner + y_outer;
+            Im_total = (I_inner+I_outer);
+            am = dm / Im_total;
+        
+            for i = 1:length(kj)
+                if i ~= index_max_strain
+                    aj_desired(i) = am * kj(i) / kj(index_max_strain);
+                    gj_inner(i) = fminbnd(@(x) optimizeCuttingDepthFromComplianceConstant(x, aj_desired(i), OD_inner, ID_inner, OD_outer, ID_outer, E_inner, E_outer), OD_inner/2, OD_inner-eps);
+                    I_inner = findI(gj_inner(i), OD_inner, ID_inner);
+                    gj_outer(i) = fminbnd(@(x) match_EI(x, OD_outer, ID_outer, E_inner*I_inner, E_outer), OD_outer/2, OD_outer-eps);
+                    I_outer = findI(gj_outer(i), OD_outer, ID_outer);
+                    yj_inner(i) = findNeutralAxis(gj_inner(i), OD_inner, ID_inner);
+                    yj_outer(i) = findNeutralAxis(gj_outer(i), OD_outer, ID_outer);
+                    aj_actual(i) = (yj_inner(i)+yj_outer(i)) / (I_inner+I_outer);
+                else
+                    aj_desired(i) = am;
+                    gj_inner(i) = g_inner;
+                    gj_outer(i) = g_outer;
+                    yj_inner(i) = findNeutralAxis(gj_inner(i), OD_inner, ID_inner);
+                    yj_outer(i) = findNeutralAxis(gj_outer(i), OD_outer, ID_outer);
+                    aj_actual(i) = am;
+                end
+            end
+        case "outer"
+            index_max_strain = index_max_strain_outer(i);
+        
+            disp(" ");
+            disp("The benchmark pair did not have the highest strain.")
+            disp("Setting a new benchmark pair and recalculating notch depths.")
+            disp(" ");
+            g_outer = fminbnd(@(x) findCuttingDepth(x, strain_safe_max_outer, OD_outer, ID_outer, kj(index_max_strain)), OD_outer/2, OD_outer-eps);
+            y_outer = findNeutralAxis(g_outer, OD_outer, ID_outer);
+            % switched strain a and b because b is in tension for inner while a is in
+            % tension for outer
+            % [strain_b, strain_a] = findStrain(g_inner, OD_inner, k_max, y_inner)
+            I_outer = findI(g_outer, OD_outer, ID_outer);
+            g_inner = fminbnd(@(x) match_EI(x, OD_inner, ID_inner, E_outer*I_outer, E_inner), OD_inner/2, OD_inner-eps);
+            
+            y_inner = findNeutralAxis(g_inner, OD_inner, ID_inner);
+            % [strain_a, strain_b] = findStrain(g_outer, OD_outer, k_max, y_outer)
+            I_inner = findI(g_inner, OD_inner, ID_inner);
+        
+            dm = y_inner + y_outer;
+            Im_total = (I_inner+I_outer);
+            am = dm / Im_total;
+        
+            for i = 1:length(kj)
+                if i ~= index_max_strain
+                    aj_desired(i) = am * kj(i) / kj(index_max_strain);
+                    gj_outer(i) = fminbnd(@(x) optimizeCuttingDepthFromComplianceConstant(x, aj_desired(i), OD_outer, ID_outer, OD_inner, ID_inner, E_outer, E_inner), OD_outer/2, OD_outer-eps);
+                    I_outer = findI(gj_outer(i), OD_outer, ID_outer);
+                    gj_inner(i) = fminbnd(@(x) match_EI(x, OD_inner, ID_inner, E_outer*I_outer, E_inner), OD_inner/2, OD_inner-eps);
+                    I_inner = findI(gj_inner(i), OD_inner, ID_inner);
+                    yj_inner(i) = findNeutralAxis(gj_inner(i), OD_inner, ID_inner);
+                    yj_outer(i) = findNeutralAxis(gj_outer(i), OD_outer, ID_outer);
+                    aj_actual(i) = (yj_inner(i)+yj_outer(i)) / (I_inner+I_outer);
+                else
+                    aj_desired(i) = am;
+                    gj_inner(i) = g_inner;
+                    gj_outer(i) = g_outer;
+                    yj_inner(i) = findNeutralAxis(gj_inner(i), OD_inner, ID_inner);
+                    yj_outer(i) = findNeutralAxis(gj_outer(i), OD_outer, ID_outer);
+                    aj_actual(i) = am;
+                end
+            end
+    end
+
+    for i = 1:length(kj)
+        hj(i) = lj(i) * (1 - (yj_outer(i))*kj(i));
+    end
+end
+
+RMSE_compliance_constant = sqrt((aj_desired-aj_actual).^2)'
+material_thickness_after_cut_outer_tube = (OD_outer - gj_outer)'
+material_thickness_after_cut_inner_tube = (OD_inner - gj_inner)'
+
+disp("The benchmark pair has been found!")
+disp("The benchmark pair is this notch pair: " + index_max_strain);
+disp("All done :)")
+
+
+%% functions
+
+function cost = findCuttingDepth(x, strain_safety, OD, ID, k)
+    y = findNeutralAxis(x, OD, ID);
+    [strain_a, strain_b] = findStrain(x, OD, k, y);
+    strain_max = max(abs([strain_a, strain_b]));
+    cost = sqrt((strain_max - strain_safety)^2);
+    if strain_max>strain_safety
+        cost = cost + 1e6;
+    end
+end
+
+function [strain_a, strain_b] = findStrain(g, OD, k, y)
+    strain_a = k * (OD/2 - y);
+    strain_b = k * (g - (OD/2 + y));
+end
+
+function y = findNeutralAxis(g, OD, ID)
+    ro = OD/2;
+    ri = ID/2;
+    if g<(ro + ri)
+        tho = 2 * acos((g-ro) / ro);
+        thi = 2 * acos((g-ro) / ri);
+        Ao = 0.5 * ro^2 * (tho-sin(tho));
+        yo = 4*ro*sin(tho/2)^3 / (3*(tho-sin(tho)));
+        Ai = 0.5 * ri^2 * (thi-sin(thi));
+        yi = 4*ri*sin(thi/2)^3 / (3*(thi-sin(thi)));
+        y = (yo*Ao - yi*Ai) / (Ao-Ai);
+    else
+        tho = 2 * acos((g-ro) / ro);
+        y = 4*ro*sin(tho/2)^3 / (3*(tho-sin(tho)));
+    end
+end
+
+function c = match_EI(x, OD, ID, EI_compare, E_outer)
+    I = findI(x, OD, ID);
+    c = sqrt((EI_compare - E_outer*I)^2);
+end
+
+function c = optimizeCuttingDepthFromComplianceConstant(x, a_desired, OD_inner, ID_inner, OD_outer, ID_outer, E_inner, E_outer)
+    y_inner = findNeutralAxis(x, OD_inner, ID_inner);
+    I_inner = findI(x, OD_inner, ID_inner);
+    g_outer = fminbnd(@(x) match_EI(x, OD_outer, ID_outer, E_inner*I_inner, E_outer), OD_outer/2, OD_outer-eps);
+    y_outer = findNeutralAxis(g_outer, OD_outer, ID_outer);
+    I_outer = findI(g_outer, OD_outer, ID_outer);
+    d = y_inner + y_outer;
+    a = d / (I_inner+I_outer);
+    c = sqrt((a-a_desired)^2);
+end
+
+function I = findI(g, OD, ID)
+    ro = OD / 2;
+    ri = ID / 2;
+    th_outer = 2 * acos((g-ro) / ro);
+    th_inner = 2 * acos((g-ro) / ri);    
+    I_outer_circle_seg = (ro^4 / 8) * (th_outer - sin(th_outer) + 2 * sin(th_outer) * (sin(th_outer / 2))^2);
+    if g < ro+ri
+        I_inner_circle_seg = (ri^4 / 8) * (th_inner - sin(th_inner) + 2 * sin(th_inner) * (sin(th_inner / 2))^2);
+        I = I_outer_circle_seg - I_inner_circle_seg;
+    else
+        I = I_outer_circle_seg;
+    end
+end
+
+function c = findCurvature(x, lj, cj, Nj, p_prev, pd)
+    kj = x;
+    Tbj = [cos(kj * lj), 0, sin(kj * lj), (1 - cos(kj * lj)) / kj;
+           0, 1, 0, 0;
+          -sin(kj * lj), 0, cos(kj * lj), sin(kj * lj) / kj;
+           0, 0, 0, 1];
+    Trj = [1, 0, 0, 0;
+           0, 1, 0, 0;
+           0, 0, 1, cj;
+           0, 0, 0, 1];
+    p_prev = [p_prev, 1]';
+    p = (Tbj * Trj)*p_prev;
+    p = p(1:3);
+    c = vecnorm(p-pd');
+end
+
+function p = findNextPosition(kj, lj, cj, p_prev)
+    Tbj = [cos(kj * lj), 0, sin(kj * lj), (1 - cos(kj * lj)) / kj;
+           0, 1, 0, 0;
+          -sin(kj * lj), 0, cos(kj * lj), sin(kj * lj) / kj;
+           0, 0, 0, 1];
+    Trj = [1, 0, 0, 0;
+           0, 1, 0, 0;
+           0, 0, 1, cj;
+           0, 0, 0, 1];
+    p_prev = [p_prev, 1]';
+    p = (Tbj*Trj) * p_prev;
+    p = p(1:3);
+end
